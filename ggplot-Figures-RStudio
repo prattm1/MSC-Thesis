@@ -1,0 +1,318 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+```
+Unless otherwise specified, dataframes used to generate figures are indicated on the left side of the arrow `<-`, and contain sample names, metadata, and the specified metric (ex. nucleic acid concentration).
+
+#### Figure 4 . Nucleic Acid Yield from Stool by Experimental Method.
+```{r}
+#DNA:
+dna_ext_boxplot <- DNA_ext_m %>% ggplot(aes(x = as.factor(Group), y = DNA_Yield)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, alpha = 0.8, 
+              size = 3) +
+  labs(x = "Experimental Group", y = "DNA Yield (ng/\u00b5l)", title = "DNA Yield by Experimental Method") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey")) + 
+  scale_colour_discrete(name  ="Kit",
+                            breaks=c("A", "B", "C"),
+                            labels=c("A", "B", "C")) +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP"))
+#RNA:
+kit2_pal <- c("#F8766D", "#00BA38") #make kit colours consistent w/ DNA
+rna_ext_boxplot <- rna_ext_m %>% ggplot(aes(x = as.factor(Group), y = RNA_Yield)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, alpha = 0.8,
+              size = 3) +
+  labs(x = "Experimental Group", y = "RNA Yield (ng/\u00b5l)", title = "RNA Yield by Experimental Method") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey")) + 
+  scale_colour_manual(values = kit2_pal, name = "Kit") +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP"))
+```
+
+#### Figure 6. Phylum-level Taxonomic Profiles of Metagenomic Data.
+where `phylum_1M_long` is a dataframe containing sample names, metadata (preservant, kit), and relative abundance of each major phylum (phyla, value) in its own row.
+```{r}
+mypal <- c("#66C2A5","#FFD92F", "#8DA0CB", "#A6D854") #create palette
+
+mgx_phylum_bar <- phylum_1M_long %>% ggplot(aes(x = sample, y = value, fill = phyla)) +
+  geom_bar(stat = "identity") +
+  labs(x = NULL, y = "Relative Abundance (%)\n", title = "Taxonomic Profile at Phylum Level by Experimental Group") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        legend.position = "bottom") +
+  facet_wrap(~factor(Kit, levels = c("Zymo", "QIAamp PP", "QIAamp FM")), scales = "free_x") + 
+  geom_text(
+  data = kit_txt, 
+  mapping = aes(x = Inf, y = Inf, label = label), 
+  hjust = 1.5,
+  vjust = 1,
+  size = 4,
+  color = "black",
+  inherit.aes = FALSE
+)
+
+mgx_phylum_bar + scale_fill_manual(values = mypal, name = "Phylum")
+```
+#### Figure 7. Firmicutes:Bacteroidetes Ratio from Metagenomic Data.
+```{r}
+mgx_fbr_boxplot <- mgx_fbratio_m %>% ggplot(aes(x = as.factor(Group), y = fbr)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .3,
+              size = 3, alpha = 0.8) +
+  labs(x = "Group", y = "F/B Ratio (log scale)", title = "F/B Ratio by Experimental Method - DNA") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey")) +
+  scale_y_log10() + scale_colour_discrete(name  ="Kit",
+                            breaks=c("AZ", "BQPP", "CQFM"),
+                            labels=c("A", "B", "C")) +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP")) +
+  geom_hline(yintercept = 0.2, linetype="dashed", size = 1, color = "azure4") +
+  geom_hline(yintercept = 10, linetype="dashed", size = 1, color = "azure4")
+```
+#### Figure 8. Species-level Shannon Index of Metagenomic Data.
+```{r}
+shannon_boxplot <- s_shannon_df %>% ggplot(aes(x = as.factor(group), y = value)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, alpha = 0.8,
+              size = 3) +
+  labs(x = "Experimental Group", y = "Shannon Index", title = "Alpha Diversity - DNA", 
+       subtitle = "Species Level Shannon Index by Experimental Method") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey"))
+
+shannon_boxplot + scale_colour_discrete(name  ="Kit",
+                            breaks=c("AZ", "BQPP", "CQFM"),
+                            labels=c("A", "B", "C")) +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP")) +
+  theme(axis.title = element_text(size = 12), 
+        axis.text.x = element_text(face = "bold", size = 12), 
+        legend.position = "right", 
+        legend.background = element_rect(fill="gray90", size=.5))
+```
+
+#### Figure 9. Alpha Diversity Components of Metagenomic Data.
+```{r}
+bar_alpha <- s_shannon_df %>% ggplot(aes(x=sample, y=richness, fill = evenness)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Experimental Group", y = "Species Richness (counts)\n", 
+       title = "Alpha Diversity - Species Richness and Evenness by Experimental Method") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.title.x = element_text(size = 12)) +
+  facet_wrap(~factor(Kit, levels = c("Zymo", "QIAamp PP", "QIAamp FM")), scales = "free_x")
+
+alpha_barplot <- bar_alpha + geom_text(
+  data = kit_txt, 
+  mapping = aes(x = Inf, y = Inf, label = label), 
+  hjust = 1.5,
+  vjust = 1,
+  size = 4,
+  color = "black",
+  inherit.aes = FALSE
+) + scale_fill_gradient(low = "black", high = "lightblue", limits = c(0.55,0.8), name = "Evenness")
+```
+
+#### Figure 10. Phase I Species-level Beta Diversity.
+Where `euc_df_p` contains coordinates of each sample for the first two principal components, derived from CLR transformation of the species table.
+```{r}
+euc_clr_plot <- euc_df_p %>% ggplot(aes(x=pcoa1, y=pcoa2, 
+                                          color = Kit, shape = Preservant),
+                       size = 1.5) +
+  geom_point() +
+  labs(x = "PC1 (57.8%)",
+       y = "PC2 (27.9%)", 
+       title = "Beta Diversity (Species) PCA with 95% CI") +
+  theme(legend.position = c(0.8, 0.7), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12), 
+        panel.background = element_rect(fill = "lightgrey"))
+
+euc_clr_plot + stat_ellipse(aes(linetype = Preservant), size =1)
+```
+
+#### Figure 11. Phase I Functional Beta Diversity.
+where `gf_euc_df` contains coordinates of each sample for the first two principal components, derived from CLR transformation of the gene family table.
+```{r}
+gf_euc_clr_plot <- ggplot(data = gf_euc_df, aes(x=pcoa1, y=pcoa2, 
+                                          color = kit, shape = preservant), 
+                          size = 1.5) +
+  geom_point() +
+  labs(x = "PC1 (71.2%)",
+       y = "PC2 (22.8%)", 
+       title = "Functional Potential PCA with CLR transformation") +
+  theme(legend.position = c(0.7, 0.75), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12), 
+        panel.background = element_rect(fill = "lightgrey"))
+
+gf_euc_clr_plot + stat_ellipse(aes(linetype = preservant))
+```
+
+#### Figure 15. Phylum-level Taxonomic Profiles of Metatranscriptomic Data.
+```{r}
+mypal <- c("#66C2A5","#FFD92F", "#8DA0CB", "#A6D854", "#FC8D62") #create palette
+
+mtx_phyl <- mtx_phylum_ab_long %>% ggplot(aes(x = sample, y = value, fill = phyla)) +
+  geom_bar(stat = "identity") +
+  labs(x = NULL, y = "Relative Abundance (%)\n", title = "Taxonomic Profile at Phylum Level by Experimental Group - RNA") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_text(size = rel(0.8), angle = 90),
+        axis.ticks.x=element_blank(), 
+        legend.position = "bottom") +
+  facet_wrap(~kit, scales = "free_x")
+
+mtx_phyl + scale_fill_manual(values = mypal, name = "Phylum")
+```
+#### Figure 16. Firmicutes:Bacteroidetes Ratio from Metatranscriptomic Data.
+```{r}
+fbr_boxplot <- mtx_fbratio_no3 %>% ggplot(aes(x = as.factor(group), y = fbr)) +
+  geom_boxplot() +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, size = 3, alpha = 0.8) +
+  labs(x = "Group", y = "F/B Ratio (log scale)", title = "F/B Ratio by Experimental Method - RNA") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey")) +
+  scale_y_log10() + scale_colour_manual(name  ="Kit",
+                                        values = kit2_pal,
+                            breaks=c("ZYMO", "QIAGEN"),
+                            labels=c("A", "B")) +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP")) +
+  theme(axis.title = element_text(size = 12), 
+        axis.text.x = element_text(face = "bold", size = 12), 
+        legend.position = "right", 
+        legend.background = element_rect(fill="gray90", size=.5)) +
+  geom_hline(yintercept = 0.2, linetype="dashed", size = 1, color = "azure4") +
+  geom_hline(yintercept = 10, linetype="dashed", size = 1, color = "azure4")
+```
+
+#### Figure 17. Species-level Shannon Index of Metatranscriptomic Data.
+```{r}
+mtx_shannon_boxplot <- mtx_shannon_no3 %>% ggplot(aes(x = as.factor(group), y = value)) +
+  geom_boxplot() +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, size = 3, alpha = 0.8) +
+  labs(x = "Experimental Group", y = "Shannon Index", title = "Alpha Diversity - RNA", 
+       subtitle = "Species Level Shannon Index by Experimental Method") + 
+  theme(panel.background = element_rect(fill = "lightgrey",
+                                colour = "lightgrey"))
+
+mtx_shannon_boxplot + scale_colour_manual(name  ="Kit", values = kit2_pal,
+                            breaks=c("ZYMO", "QIAGEN"),
+                            labels=c("A", "B")) +
+      scale_shape_discrete(name  ="Preservant",
+                           breaks=c("NAS", "NP", "RNAP"),
+                           labels=c("NAS", "NP", "RNAP")) +
+  theme(axis.title = element_text(size = 12), 
+        axis.text.x = element_text(face = "bold", size = 12), 
+        legend.position = "right", 
+        legend.background = element_rect(fill="gray90", size=.5))
+```
+#### Figure 18. Alpha Diversity Components of Metatranscriptomic Data.
+```{r}
+mtx_bar_alpha <- ggplot(mtx_shannon_no3, aes(x=sample, y=richness, fill = evenness)) +
+  geom_bar(stat = "identity") +
+  labs(x = NULL, y = "Species richness (counts)\n", 
+       title = "Alpha Diversity - Species Richness and Evenness by Experimental Method - RNA") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_text(size = rel(0.8), angle = 90),
+        axis.ticks.x=element_blank()) +
+  facet_wrap(~kit, scales = "free_x", nrow = 1) + scale_fill_gradient(low = "black", high = "lightblue", limits = c(0.55,0.85), name = "Evenness")
+```
+
+#### Figure 19. Phase II Species-level Beta Diversity. 
+where `mtx_euc_df` contains coordinates of each sample on the first two principal components, derived from CLR transformation of the species table. 
+```{r}
+mtx_euc_clr_plot <- mtx_euc_df %>% ggplot(aes(x=pcoa1, y=pcoa2, 
+                                          color = kit, shape = preservant),
+                       size = 2.5) +
+  geom_point() +
+  labs(x = "PC1 (40.4%)",
+       y = "PC2 (22.5%)", 
+       title = "Beta Diversity (Species) PCA with 95% CI - RNA") +
+  theme(legend.position = c(0.8, 0.7), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12), 
+        panel.background = element_rect(fill = "lightgrey"))
+
+mtx_euc_clr_plot + stat_ellipse(aes(linetype = preservant), size =1) + 
+  scale_fill_manual(values = c("#66C2A5", "#FFD92F"), name = "kit")
+```
+
+#### Figure 23. Within-sample Evenness of Taxonomic and Functional Profiles.
+```{r}
+pielou_all_plot <- shannon_all_3 %>% ggplot(aes(x = factor(measure, levels = c("Species", "Function, DNA", "Function, RNA")),
+                                                y = evenness, fill = kit, shape = preservant)) +
+  geom_jitter(aes(color = kit, shape = preservant), height = 0, width = .2, size = 3, alpha = 0.8) +
+  labs(title = "Alpha Diversity - Evenness by Data Type and Group", y = "Pielou's evenness", x = NULL)
+
+pielou_all_boxplot <- pielou_all_plot + geom_boxplot(aes(group = measure, alpha = 0.1, fill = group), show.legend = FALSE)
+```
+
+#### Figure S2. Metagenomic Comparison with Published Data.
+```{r}
+sample_order <- phyl_abuali$sample
+phylum_abuali_long$phyla <- factor(phylum_abuali_long$phyla, levels = c("Actinobacteria", 
+                                                                        "Bacteroidetes", 
+                                                                        "Firmicutes", 
+                                                                        "Proteobacteria",
+                                                                        "Verrucomicrobia",
+                                                                        "Fusobacteria", 
+                                                                        "other_phyla"))
+abuali <- phylum_abuali_long %>% ggplot(aes(x = factor(sample, levels = sample_order), y = value, fill = phyla)) +
+  geom_bar(stat = "identity")
+
+mypal <- c("#66C2A5","#FFD92F", "#8DA0CB", "#A6D854", "#FC8D62","#E78AC3","#E5C494")
+
+abuali + labs(x = NULL, y = "Relative Abundance (%)\n", title = "Taxonomic Profiles of Healthy Stool", 
+              subtitle = "Abu-Ali et al., 2018 Nature Microbiology", 
+              caption = "Males 65-81 y/o") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) + scale_fill_manual(values = mypal, name = "phylum")
+
+abuali_fbr <- ggplot(abuali_fbratio_in, aes(fbr))
+
+abuali_fbr + geom_area(stat = "bin", fill = "deepskyblue3") + labs(x = "Firmicutes:Bacteroidetes Ratio", y = "count") +
+  geom_vline(aes(xintercept=mean(fbr)),
+             color="darkslateblue", linetype="dashed", size=1)
+```
+
+#### Figure S3. Fecal Reference Comparison.
+```{r}
+zfref_phylum_long <- zfref_phylum_ab %>% rownames_to_column(var = "sample") %>% pivot_longer(2:6, names_to = "phylum", names_prefix= "p__") %>% filter(value>0)
+
+zfref_genus_long <- zfref_genus_ab %>% rownames_to_column(var = "sample") %>% pivot_longer(2:56, names_to = "genus", names_prefix= "g__") %>% filter(value>0)
+
+zfref_phyla <- zfref_phylum_long %>% ggplot(aes(x = sample, y = value, fill = phylum)) +
+  geom_bar(stat = "identity") +
+  labs(x = NULL, y = "Relative Abundance (%)\n", title = "Taxonomic Profile of Fecal Reference at Phylum Level") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_text(size = rel(0.8), angle = 90),
+        axis.ticks.x=element_blank(), 
+        legend.position = "right")
+
+zfref_phyla + scale_fill_manual(values = mypal, name = "phylum")
+
+zfref_genus <- zfref_genus_long %>% ggplot(aes(x = sample, y = value, fill = genus)) +
+  geom_bar(stat = "identity") +
+  labs(x = NULL, y = "Relative Abundance (%)\n") +
+  theme(panel.background = element_blank(),
+        axis.text.x=element_text(size = rel(1.5), angle = 45, hjust = 1, 
+                                 vjust = 1.5),
+        axis.ticks.x=element_blank(), 
+        legend.position = "left",
+        legend.text = element_text(size = 10))
+
+zfref_genus
