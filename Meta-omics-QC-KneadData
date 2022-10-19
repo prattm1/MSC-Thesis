@@ -1,0 +1,157 @@
+# Meta-omics Analysis - Sequence Quality Filtering & Trimming with KneadData
+
+### Molly Pratt 7660174
+
+## Metagenomics - DNA
+
+### 1. Navigate into KneadData environment and download raw sequences
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Stool_Metagenomics_DNA/seqs
+ngsArchiveLinker.pl -p 1714 -t fastq 
+conda activate bioBakery_kneaddata
+```
+
+`python                    2.7.15          h5a48372_1011_cpython   conda-forge`  
+`kneaddata                 0.7.6            py27hbf8c060_0    biobakery`  
+`bowtie2                   2.3.5.1          py27he513fc3_0    bioconda`  
+`fastqc                    0.11.8                        0    bioconda`  
+`multiqc                   1.8                        py_2    bioconda`  
+`trimmomatic               0.33                          0    bioconda`
+
+### 2. Download/Build contamination databases for Bowtie2
+
+
+```bash
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="kneaddata_database --download human_genome bowtie2 ./databases" #indexed human genome hg37
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="bowtie2-build phi-X174.fasta ./databases/phiX" #phiX genome from https://www.ncbi.nlm.nih.gov/nuccore/NC_001422.1?report=fasta
+```
+
+### 3. Run KneadData, FastQC, and MultiQC to generate comprehensive reports:
+
+
+```bash
+#Run Kneaddata on all pairs of sequences, include FastQC call:
+for i in *_R1_001.fastq
+do
+    filename=$(basename "$i")
+    fname="${filename%_R*_001.fastq}"
+    sbatch -p NMLResearch -c 4 --mem=2G --wrap="kneaddata --input ${fname}_R1_001.fastq --input ${fname}_R2_001.fastq --output ../kneaddata/kneaddata_out \
+    --reference-db ../databases/human/hg37dec_v0.1 --reference-db ../databases/phix/phiX \
+    --run-fastqc-start --run-fastqc-end --cat-final-output"; done
+
+#clean outputs:
+cd ../kneaddata/kneaddata_out
+mkdir contam
+mkdir logs
+mkdir clean
+
+mv *contam* contam/
+mv *.log logs/
+mv *kneaddata.fastq clean/
+#create read count summary table:
+cd kneaddata
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="kneaddata_read_count_table --input kneaddata_out/logs --output kneaddata_read_count_table.tsv"
+
+#rename cleaned seqs: 
+cd kneaddata_out/clean
+for i in .; do mv "$i" "$(echo $i | cut -f 1,2,5 -d '_')"; done 
+#run MultiQC:
+cd kneaddata_out/fastqc/summary_reports
+mkdir raw
+mkdir clean
+
+mv *_R* raw/.
+mv *kneaddata* clean/.
+
+#run multiQC:
+cd raw
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+
+cd ../clean
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+```
+
+## Metatranscriptomics - RNA
+
+### 1. Download raw sequences
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Metatranscriptomics/
+mkdir ns2k_seqs
+cd ns2k_seqs/
+ngsArchiveLinker.pl -p 2048 -t fastq 
+
+#clean up directory structure
+mv Stool_Metatranscriptomics_RNA/*/*.fastq .
+rm -r Stool_Metatranscriptomics_RNA/
+ls | wc -l 
+#clean up names:
+for i in *.fastq; do mv "$i" "$(echo $i | cut -f 1,3 -d '_')"; done  #removes the .fastq extension
+for i in *R*; do mv "$i" "$(echo "$i.fastq")" ; done
+cd ..
+```
+
+### 2. Download and Build rRNA contamination databases with Bowtie 2:  
+Representative 16S and 23S bacterial and archaeal rRNA databases, created by SortmeRNA from representative SILVA databases, were downloaded from https://bioinfo.lifl.fr/sortmerna/material.php. 
+
+
+```bash
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="bowtie2-build -f 16S-85-percent-id.fasta bt2/16S"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="bowtie2-build -f 23S-98-percent-id.fasta bt2/23S"
+```
+
+### 3. Run KneadData, FastQC, and MultiQC to generate comprehensive reports:
+
+
+```bash
+mkdir kneaddata/ns2k_out
+cd ns2k_seqs/
+
+for i in *_R1.fastq
+do
+    filename=$(basename "$i")
+    fname="${filename%_R*.fastq}"
+    sbatch -p NMLResearch -c 4 --mem=2G --wrap="kneaddata --input ${fname}_R1.fastq --input ${fname}_R2.fastq \
+    --output ../kneaddata/ns2k_out \
+    --run-fastqc-start --run-fastqc-end --cat-final-output \
+    --reference-db ../bt2_db/16S \
+    --reference-db ../bt2_db/23S \
+    --reference-db ../bt2_db/hg37dec_v0.1 \
+    --reference-db ../bt2_db/phiX"; done
+    
+#clean up fastqc outputs:
+cd ../kneaddata/ns2k_out/
+mkdir fastqc/summary_reports
+mkdir fastqc/summary_reports/raw
+mkdir fastqc/summary_reports/clean
+mv fastqc/reformatted_identifiers* fastqc/summary_reports/raw/.
+mv fastqc/*kneaddata_fastqc* fastqc/summary_reports/clean/.
+
+#clean up filenames in fastqc/summary_reports:
+cd fastqc/summary_reports/raw
+for i in reformatted*; do mv "$i" "$(echo $i | rev | cut -f 1,2,3 -d '_' | rev)"; done #use rev twice to get the last 3 fields
+
+#run multiqc
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+
+cd ../clean/
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+
+#clean up other kneaddata outputs:
+cd ../../../
+mkdir contam
+mkdir logs
+mkdir clean
+mv *_contam* contam/
+mv *.log logs/
+mv *kneaddata.fastq clean/
+
+#create read count summary table:
+
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="kneaddata_read_count_table --input ./logs --output MTX_ns2k_read_table.tsv"
+```
