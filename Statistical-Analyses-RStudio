@@ -1,0 +1,143 @@
+```{r}
+library(tidyverse)
+library(zCompositions)
+library(CoDaSeq)
+library(vegan)
+library(ecodist)
+library(indicspecies)
+library(Maaslin2)
+```
+
+CLR transformations of feature count tables for beta diversity.
+```{r}
+###Metagenomics:
+#Add pseudocounts to the species count table using the CZM method:
+s_counts_n0 <- zCompositions::cmultRepl(s_counts, method = "CZM", label = 0, output = "p-counts")
+#CLR transformation
+s_clr_assay <- CoDaSeq::codaSeq.clr(s_counts_n0)
+#distance calculation
+euc_dist <- vegan::vegdist(s_clr_assay, method = "euclidean")
+#get principal components:
+euc_pcoa <- ecodist::pco(euc_dist)
+#add coordinates to a dataframe for plotting
+euc_pcoa_df <- data.frame(pcoa1 = euc_pcoa$vectors[,1], 
+                          pcoa2 = euc_pcoa$vectors[,2])
+
+###Metagenomic Gene Families:
+gf_counts_n0 <- cmultRepl(genefam_mgx_unstrat, method = "CZM", label = 0, output = "p-counts")
+gf_clr_assay <- codaSeq.clr(gf_counts_n0)
+View(gf_clr_assay)
+
+gf_euc_dist <- vegan::vegdist(gf_clr_assay, method = "euclidean")
+gf_euc_pcoa <- ecodist::pco(gf_euc_dist)
+gf_euc_pcoa_df <- data.frame(pcoa1 = gf_euc_pcoa$vectors[,1], 
+                          pcoa2 = gf_euc_pcoa$vectors[,2])
+
+###Metatranscriptomics:
+mtx_s_counts_18 <- mtx_s_counts %>% dplyr::slice(1:18) #need to get rid of Group 3 since they have no data.
+mtx_s_n0 <- cmultRepl(mtx_s_counts_18, method = "CZM", label = 0, output = "p-counts")
+mtx_clr_assay <- codaSeq.clr(mtx_s_n0)
+View(mtx_clr_assay) 
+
+mtx_euc_dist <- vegan::vegdist(mtx_clr_assay, method = "euclidean")
+mtx_euc_pcoa <- ecodist::pco(mtx_euc_dist)
+mtx_euc_pcoa_df <- data.frame(pcoa1 = mtx_euc_pcoa$vectors[,1], 
+                          pcoa2 = mtx_euc_pcoa$vectors[,2])
+```
+
+ANOSIM
+```{r}
+###Metagenomics
+#Analysis of Similarities using the euclidean distance matrix above
+clr.ano <- with(group_meta, vegan::anosim(euc_dist, Group))
+summary(clr.ano)
+#Call:
+#anosim(x = euc_dist, grouping = Group) 
+#Dissimilarity: euclidean 
+
+#ANOSIM statistic R: 0.5115 ##dissimilarity is greater between groups than within-groups.
+#     Significance: 0.001
+
+plot(clr.ano)
+
+###Metagenomic gene families:
+gf.ano <- with(gf_euc_df, anosim(gf_euc_dist, Group))
+summary(gf.ano)
+plot(gf.ano)
+#Call:
+#anosim(x = gf_euc_dist, grouping = Group) 
+#Dissimilarity: euclidean 
+#
+#ANOSIM statistic R: 0.8418 # Between-group dissimilarity is higher than within-group dissimilarity
+#      Significance: 0.001
+
+###Metatranscriptomics
+mtx.ano <- with(mtx_euc_df, anosim(mtx_euc_dist, group))
+summary(mtx.ano)
+plot(mtx.ano)
+#Call:
+#anosim(x = mtx_euc_dist, grouping = group) 
+#Dissimilarity: euclidean 
+#
+#ANOSIM statistic R: 0.5271 # Between-group dissimilarity is higher than within-group dissimilarity
+#      Significance: 0.001
+```
+
+Indicator Species Analysis
+```{r}
+View(s_relab) # dataframe of metagenomic species-level relative abundance values, rows = samples.
+#View species associated with observed PCA clusters:
+groups = group_meta$Group #where group_meta contains metadata for all samples
+clust <- data.frame(groups)
+clust$sample <- rownames(s_relab)
+# Sort groups into clusters:
+clust <- clust %>% mutate(cluster = case_when(groups %in% c("1", "3", "4", "6") ~ "BB - Pres",
+                                              groups %in% c("2", "5") ~ "BB - Unpres", 
+                                              groups %in% c("7","9") ~ "Therm - Pres", 
+                                              sample == "CQFMNP4" ~ "Therm - Pres", 
+                                              sample %in% 
+                                                c("CQFMNP5", "CQFMNP6", "CQFMNP7", "CQFMNP8") ~
+                                                "Therm - Unpres"
+                                              ))
+View(clust)
+clusters <- clust$cluster
+
+inv_clust = indicspecies::multipatt(s_relab, clusters, func = "r.g", control = how(nperm = 9999))
+
+sink(file = "ind_sp_clusters.txt")
+summary(inv_clust)
+sink(file = NULL)
+```
+
+MaAslin
+```{r}
+###Metagenomics:
+#first fix the path_ab df to only include the 52 working stool samples (no blanks, mocks, etc.)
+mgx_pathab_52 <- mgx_pathab %>% dplyr::select(one_of(rownames(mgx_meta)))
+#fix the Group column to be a factor instead of numerical:
+mgx_meta$Group <- factor(mgx_meta$Group)
+#run Maaslin2
+fit_mgx_func = Maaslin2(
+  input_data = mgx_pathab_52, 
+  input_metadata = mgx_meta, 
+  output = "mgx_functional_bygroup", 
+  fixed_effects = c("Group"),
+  reference = c("Group, 1"),
+  min_abundance = 0.0001,
+  min_prevalence = 0.1)
+
+###Metatranscriptomics:
+#first fix the path_ab df to exclude group3
+mtx_pathab_no3 <- mtx_pathab %>% dplyr::select(one_of(mtx_meta$sample))
+#fix the Group column to be a factor instead of numerical:
+mtx_meta$group <- factor(mtx_meta$group)
+#run Maaslin2
+fit_mtx_func = Maaslin2(
+  input_data = mtx_pathab_no3, 
+  input_metadata = mtx_meta, 
+  output = "mtx_functional_bygroup", 
+  fixed_effects = c("group"),
+  reference = c("group, 1"),
+  min_abundance = 0.00001,  #alter these to 1/10th that of mgx
+  min_prevalence = 0.01)
+```
