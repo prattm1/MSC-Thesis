@@ -1,0 +1,149 @@
+# Meta-omics Analysis - Community Functional Profiling using HUMAnN3  
+### Molly Pratt 7660174
+
+## Metagenomics - DNA
+
+### 1. Navigate into HUMAnN3 Environment:
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Stool_Metagenomics_DNA/humann
+conda activate bioBakery_humann3
+```
+
+`python                    3.7.12          hb7a2778_100_cpython    conda-forge`  
+`humann                    3.0.0              pyheec8a34_0    biobakery`  
+`bowtie2                   2.4.4            py37h13ad519_0    bioconda`  
+`biopython                 1.79             py37h5e8e339_1    conda-forge`  
+`diamond                   2.0.13               hdcc8f71_0    bioconda`  
+
+### 2. Install Databases and Run HUMAnN on KneadData output:
+
+
+```bash
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_databases --download chocophlan full humann_dbs"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_databases --download uniref uniref90_diamond humann_dbs/uniref/"
+cd kneaddata/kneaddata_out/clean
+for i in *kneaddata.fastq; do sbatch -p NMLResearch -c 4 --mem=2G --wrap="humann -i $i -o ../out/"; done
+```
+
+### 3. Merge and format outputs for downstream analysis:
+
+
+```bash
+#merge outputs:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_join_tables -i gene_families -o mgx_merged_genefamilies.tsv --file_name genefamilies"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_join_tables -i path_cov -o mgx_merged_pathcoverage.tsv --file_name pathcoverage"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_join_tables -i path_abund -o mgx_merged_pathabundance.tsv --file_name pathabundance"
+
+#Normalize files to relative abundance (not cpm, as before):
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_renorm_table -i mgx_merged_genefamilies.tsv -o mgx_genefamilies_relab.tsv --units relab --update-snames"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_renorm_table -i mgx_merged_pathabundance.tsv -o mgx_pathab_relab.tsv --units relab --update-snames"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_renorm_table -i mgx_merged_pathcoverage.tsv -o mgx_pathcov_relab.tsv --units relab --update-snames"
+
+#regroup functional categories to metacyc (rxn):
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_regroup_table --input mgx_genefamilies_relab.tsv --output mgx_genefamilies_rxn.tsv --groups uniref90_rxn" 
+
+#attach names to features (metacyc rxn, also available: kegg, pfam, eggnog?):
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_rename_table --input mgx_genefamilies_rxn.tsv --output mgx_genefamilies_rxn-named.tsv --names metacyc-rxn"
+```
+
+### 4. Humann Barplotting:  
+Added metadata to the path_ab humann output in RStudio.  
+Following: https://github.com/biobakery/biobakery/wiki/humann3#2-metagenome-functional-profiling  
+Next, examine MaAslin output to see the top enriched pathways by experimental group. `significant_results.tsv`.  
+Use humann_barplot to examine the example data as well as the MGX data.
+
+
+```bash
+cd W/Projects/Project_MPratt/Metagenomics/Stool_Metagenomics_DNA/humann/
+mkdir humann_barplots
+cd humann_barplots/
+# plot the top 5 features:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output f1_5030_mgx.png --focal-feature PWY-5030 --sort sum metadata --max-metalevels 9 --scaling logstack"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output f2_MA_mgx.png --focal-feature METH-ACETATE-PWY --sort sum metadata --max-metalevels 9 --scaling logstack"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output f3_7456_mgx.png --focal-feature PWY-7456 --sort sum metadata --max-metalevels 9 --scaling logstack"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output f4_7663_mgx.png --focal-feature PWY-7663 --sort sum metadata --max-metalevels 9 --scaling logstack"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output f5_FE_mgx.png --focal-feature FASYN-ELONG-PWY --sort sum metadata --max-metalevels 9 --scaling logstack"
+```
+
+## Metatranscriptomics - RNA
+
+### 1. Navigate into HUMAnN3 Environment:
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Metatranscriptomics/humann
+conda activate bioBakery_humann3
+```
+
+### 2. Run HUMAnN3 on samples using a joint taxonomic profile from MetaPhlAn:
+
+
+```bash
+#copy taxonomic profiles from metaphlan:
+mkdir humann/tax_profiles
+cp metaphlan/metaphlan_ns2k_out/*profile.txt humann/tax_profiles/.
+
+#join taxonomic profiles
+cd humann/tax_profiles/ 
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="merge_metaphlan_tables.py *_profile.txt > joined_taxonomic_profile.tsv" 
+
+#Reduce file to maximum abundance profile:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_reduce_table --input joined_taxonomic_profile.tsv --output max_taxonomic_profile.tsv \
+--function max --sort-by level"
+
+#Run HUMAnN on one sample first to see if the max profile needs fixing: (it does - changing header + appending tab to each line w/ notepad)
+cd ../
+sbatch -p NMLResearch -c 4 --mem=2G --wrap="humann --input test/QNAS2-NS2K_kneaddata.fastq --output test/humann_test_out \
+--taxonomic-profile tax_profiles/max_taxonomic_profile.tsv"
+
+#Once completed, run on remaining samples using the indexed nucleotide db from the primary run above:
+for i in *kneaddata.fastq; do sbatch -p NMLResearch -c 4 --mem=2G --wrap="humann --input $i --output ../humann_out --threads 4 \
+--nucleotide-database ../test/humann_test_out/QNAS2-NS2K_kneaddata_humann_temp/ --bypass-nucleotide-index"; done
+
+```
+
+#### 3. Humann Barplotting:  
+Added metadata to the path_ab humann output in RStudio.  
+Following: https://github.com/biobakery/biobakery/wiki/humann3#2-metagenome-functional-profiling  
+Next, examine MaAslin output to see the top enriched pathways by experimental group. `significant_results.tsv`.  
+Use humann_barplot to examine the MTX data. 
+
+
+```bash
+cd W/Projects/Project_MPratt/Metatranscriptomics/humann/
+mkdir humann_barplots
+cd humann_barplots/
+#add metadata row to path_ab file. Also remove group 3. 
+
+#top feature from MGX: histidine degradation III
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mtx_pathab_meta_no3.tsv --focal-metadata Group --last-metadata Group \
+    --output test_5030_mtx.png --focal-feature PWY-5030 --sort sum metadata --max-metalevels 5 --scaling logstack"
+    
+#peptidoglycan biosynthesis:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mtx_pathab_meta_no3.tsv --focal-metadata Group --last-metadata Group \
+    --output PG_synth_mtx.png --focal-feature PEPTIDOGLYCANSYN-PWY --sort sum metadata --max-metalevels 9 --scaling logstack"
+ 
+# Top associations from RNA that are also present in DNA: Histidine Degradation I
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mtx_pathab_meta_no3.tsv --focal-metadata Group --last-metadata Group \
+    --output HISDEG_mtx.png --focal-feature HISDEG-PWY --sort sum metadata --max-metalevels 9 --scaling logstack"
+    #these will be paired with mgx so copy that feature table into cwd
+cp ~/W/Projects/Project_MPratt/Metagenomics/Stool_Metagenomics_DNA/humann/humann_barplots/mgx_pathab_meta.tsv .
+mkdir mgx
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx/mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output mgx/HISDEG_mgx.png --focal-feature HISDEG-PWY --sort sum metadata --max-metalevels 9 --scaling logstack"
+#PWY0.1586 - peptidoglycan maturation
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mtx_pathab_meta_no3.tsv --focal-metadata Group --last-metadata Group \
+    --output 1586_pg_mtx.png --focal-feature PWY0-1586 --sort sum metadata --max-metalevels 9 --scaling logstack"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="humann_barplot --input mgx/mgx_pathab_meta.tsv --focal-metadata Group --last-metadata Group \
+    --output mgx/1586_pg_mgx.png --focal-feature PWY0-1586 --sort sum metadata --max-metalevels 9 --scaling logstack"
+    
+```
