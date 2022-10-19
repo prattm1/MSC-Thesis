@@ -1,0 +1,99 @@
+# Fecal Reference Comparison  
+### Molly Pratt 7660174
+
+### 1. Download raw .fastq RNA seqs from the ZymoBIOMICS Fecal Reference Database:
+
+
+```bash
+cd Drives/W/Projects/Project_MPratt/Metatranscriptomics
+cd Fecal_Reference/ 
+mkdir rna_seqs
+cd rna_seqs/
+#links to sequences are located in "D6323_NGS_characterization_data.xlsx" in the Fecal_Reference dir
+#Download PE sequences for 6 samples (R1 and R2) with variable read depth:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_30_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_30_R2.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_2_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_2_R2.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_8_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_8_R2.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_10_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_10_R2.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_11_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_11_R2.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_19_R1.fastq.gz"
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="wget https://epiquest.s3.amazonaws.com/epiquest_in2197/9EXWGKYPVFQUD7ZVPAAYKZW4FN69A23C/rawdata/200622/in2197_19_R2.fastq.gz"
+
+#Unzip:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="gzip -d *.fastq.gz"
+```
+
+### 2. Run KneadData on downloaded .fastq files:
+
+
+```bash
+#Run Kneaddata on seqs:
+conda activate bioBakery_kneaddata
+for i in *_R1.fastq
+do
+    filename=$(basename "$i")
+    fname="${filename%_R*.fastq}"
+    sbatch -p NMLResearch -c 4 --mem=2G --wrap="kneaddata --input ${fname}_R1.fastq --input ${fname}_R2.fastq \
+    --output ../kneaddata/out \
+    --reference-db ../../bt2_db/16S \
+    --reference-db ../../bt2_db/23S \
+    --reference-db ../../bt2_db/hg37dec_v0.1 \
+    --run-fastqc-start --run-fastqc-end \
+    --cat-final-output"; done
+
+#organize outputs:
+cd ../kneaddata/out/
+mkdir fastqc/summary_reports
+mkdir fastqc/summary_reports/raw
+mkdir fastqc/summary_reports/clean
+mv fastqc/reformatted_identifiers* fastqc/summary_reports/raw/.
+mv fastqc/*kneaddata_fastqc* fastqc/summary_reports/clean/.
+
+#clean up filenames in fastqc/summary_reports:
+cd fastqc/summary_reports/raw
+for i in reformatted*; do mv "$i" "$(echo $i | rev | cut -f 1,2,3,4 -d '_' | rev)"; done #use rev twice to get the last 3 fields
+
+#run multiqc
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+
+cd ../clean/
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="multiqc ."
+
+#clean up other kneaddata outputs:
+cd ../../../
+mkdir contam
+mkdir logs
+mkdir clean
+mv *_contam* contam/
+mv *.log logs/
+mv *kneaddata.fastq clean/
+
+#create read count summary table:
+cd ../
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="kneaddata_read_count_table --input out/logs --output ZFREF_read_table.tsv"
+```
+
+### 3. Run MetaPhlAn on QC'ed sequences to obtain community taxonomic profiles:
+
+
+```bash
+#Run metaphlan on seqs:
+conda deactivate
+conda activate bioBakery_metaphlan3
+cd out/clean/
+for i in *.fastq; do mv "$i" "$(echo $i | cut -f 1,2,4 -d '_')"; done
+mkdir ../../../metaphlan
+mkdir ../../../metaphlan/FREF_out
+
+for i in *.fastq; do sbatch -p NMLResearch -c 4 --mem=2G --wrap="metaphlan $i --input_type fastq --nproc 4 \
+--bt2_ps sensitive --stat_q 0.1 --perc_nonzero 0.25 --min_mapq_val 1 --read_min_len 50 \
+--bowtie2db ../../../../mtx_low_phix_run/metaphlan/bt2_db > ../../../metaphlan/FREF_out/${i%.fastq}_profile.txt"; done
+
+cp ../../../metaphlan/metaphlan_cat_out/ZFREF_profile.txt . #add our profile
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="merge_metaphlan_tables.py *_profile.txt > merged_ZFREF_table.txt"
+```
