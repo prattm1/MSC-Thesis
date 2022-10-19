@@ -1,0 +1,145 @@
+# Meta-omics Analysis - Community Taxonomic Profiling using MetaPhlAn3
+
+### Molly Pratt 7660174
+
+## Metagenomics - DNA
+
+### 1. Navigate into MetaPhlAn3 Environment
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Stool_Metagenomics_DNA/metaphlan/metaphlan3
+conda activate bioBakery_metaphlan3
+```
+
+`python                    3.7.10          hffdb5ce_100_cpython    conda-forge`  
+`biopython                 1.79             py37h5e8e339_0    conda-forge`  
+`bowtie2                   2.4.4            py37h13ad519_0    bioconda`  
+`metaphlan                 3.0.13             pyhb7b1952_0    bioconda`  
+
+### 2. Install latest versions of MetaPhlAn and Bowtie2 databases
+
+
+```bash
+#Download bt2 databases:
+mkdir bt2_db
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="metaphlan --install --bowtie2db bt2_db"
+```
+
+### 3. Run MetaPhlan on concatenated sequence data (PE KneadData output)
+
+
+```bash
+mkdir seqs_clean
+cp ~/W/Projects/Project_MPratt/Metagenomics/Stool_Metagenomics_DNA/kneaddata/kneaddata_out/clean/*.fastq seqs_clean/
+ls metaphlan3/seqs_clean | wc -l #confirm 72 samples
+
+mkdir metaphlan_out
+cd seqs_clean
+for i in *kneaddata.fastq; do sbatch -p NMLResearch -c 4 --mem=2G --wrap="metaphlan $i --input_type fastq --nproc 4 --bowtie2db ../bt2_db > \
+../metaphlan_out/${i%.fasta.gz}_profile.txt"; done
+```
+
+### 4. Check Community Profiles:
+
+Check `metaphlan_out` dir. Initial glance: A/B blanks look good, only "unknown" contamination. However, "C" blanks have several taxa identified, mainly o__Clostridiales.  
+
+<h3 align="center"> Compare Mock Community composition to the expected composition: </h3>
+<h3 align="center">  Balanced Community: </h3>
+  
+| Taxa | Expected | Actual |  
+| ---- | -------- | ------ |  
+| *Listeria monocytogenes* | 12% | 9.70636% |  
+| *Pseudomonas aeruginosa* | 12% | 2.88331% |  
+| *Bacillus subtilis* \* | 12% | 15.19996% |  
+| *Escherichia coli* | 12% | 14.34605% |  
+| *Salmonella enterica* | 12% | 12.6307% |  
+| *Lactobacillus fermentum* | 12% | 21.04835% |  
+| *Enterococcus faecalis* | 12% | 14.7231% |  
+| *Staphylococcus aureus* | 12% | 8.52322% |  
+| *Saccharomyces cerevisiae* | 2% | 0.65668% |  
+| *Cryptococcus neoformans* | 2% | 0.21466% |  
+| **Total** | 100% | 99.93239% |
+  
+  
+<h3 align="center">  Log Distribution Community: </h3>
+  
+| Taxa | Expected | Actual |  
+| ---- | -------- | ------ |  
+| *Listeria monocytogenes* | 89.1% | 96.23792% |  
+| *Pseudomonas aeruginosa* | 8.9% | 2.20565% |  
+| *Bacillus subtilis* \* | 0.89% | 1.17691% |  
+| *Saccharomyces cerevisiae* | 0.89% | 0.28152% |
+| *Escherichia coli* | 0.089% | 0.02034% |  
+| *Salmonella enterica* | 0.089% | 0.07766% |  
+| *Lactobacillus fermentum* | 0.0089% | unidentified |  
+| *Enterococcus faecalis* | 0.00089% | unidentified |  
+| *Cryptococcus neoformans* | 0.00089% | unidentified | 
+| *Staphylococcus aureus* | 0.000089% | unidentified |    
+| **Total** | 99.97% | 100% |  
+  
+<center>  * <i>Bacillus subtilis</i> was identified as <i>Bacillus intestinalis</i> by MetaPhlAn3 
+
+### 5. Generate a heatmap using hclust2  
+`hclust2                   1.0.0              pyh864c0ab_1    bioconda`
+
+
+```bash
+# First, clean up sample names from MetaPhlAn output:
+cd ../metaphlan_out
+for i in *_profile.txt*; do mv "$i" "$(echo $i | cut -f 1,4 -d '_')"; done 
+
+# now create merged abundance table and species-only table:
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="merge_metaphlan_tables.py *_profile.txt > merged_abundance_table.txt" 
+grep -E "s__|clade" merged_abundance_table.txt | sed 's/^.*s__//g' | cut -f 1,3- | sed -e 's/clade_name/sample_name/g' > merged_abundance_table_species.txt
+
+# navigate into the hclust2 environment to generate the heatmap:
+conda deactivate
+conda activate bioBakery_hclust2
+
+# generate a heatmap - adjust parameters as needed
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="hclust2.py -i merged_abundance_table_species.txt -o abundance_heatmap_species.png -l \
+--flabel_size 8 --slabel_size 8 --image_size 12 --max_flabel_len 100 --max_slabel_len 100 --minv 0.1 --dpi 300"
+```
+
+## Metatranscriptomics - RNA
+
+### 1. Navigate into MetaPhlAn3 Environment
+
+
+```bash
+ssh waffles.cscscience.ca
+cd Metatranscriptomics/metaphlan3
+conda activate bioBakery_metaphlan3
+```
+
+### 2. Run MetaPhlAn3 on KneadData output using downloaded dbs:
+
+
+```bash
+mkdir metaphlan/metaphlan_ns2k_out
+cd kneaddata/ns2k_out/clean/
+conda activate bioBakery_metaphlan3
+#run metaphlan with "sensitive" bt2 parameters
+for i in *.fastq; do sbatch -p NMLResearch -c 4 --mem=2G --wrap="metaphlan $i --input_type fastq --nproc 4 \
+--bt2_ps sensitive --stat_q 0.1 --perc_nonzero 0.25 --min_mapq_val 1 --read_min_len 50 \
+--bowtie2db ../../../mtx_low_phix_run/metaphlan/bt2_db > ../../../metaphlan/metaphlan_ns2k_out/${i%.fastq}_profile.txt"; done
+#clean output names
+cd ../../../metaphlan/metaphlan_ns2k_out/
+for i in *.txt; do mv "$i" "$(echo $i | cut -f 1,3 -d '_')"; done
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="merge_metaphlan_tables.py *_profile.txt > merged_MTX-ns2k_table.txt"
+```
+
+### 3. Generate a heatmap using hclust2
+
+
+```bash
+#Use hclust to visualize results
+conda deactivate
+conda activate bioBakery_hclust2
+grep -E "s__|clade" merged_MTX-ns2k_table.txt | sed 's/^.*s__//g' | cut -f 1,3- | sed -e 's/clade_name/sample_name/g' > merged_MTX-ns2k_table_species.txt
+
+sbatch -p NMLResearch -c 1 --mem=1G --wrap="hclust2.py -i merged_MTX-ns2k_table_species.txt -o MTX_heatmap_species.png -l \
+--flabel_size 8 --slabel_size 8 --image_size 12 --max_flabel_len 100 --max_slabel_len 100 --minv 0.1 --dpi 300"
+```
